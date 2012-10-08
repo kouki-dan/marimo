@@ -257,7 +257,7 @@ enchant.nineleap.memory.Game = enchant.Class.create(parentModule.Game, {
         if (resBody == undefined) {
         } else if ('code' in resBody) {
             if (resBody.code == 401 && this.requireAuth) {
- //               window.location.replace(HttpRequest.SERVER_URL + 'login?after_login=' + window.location.href);
+                window.location.replace(HttpRequest.SERVER_URL + 'login?after_login=' + window.location.href);
                 return;
             } else if (resBody.code == 401 && !this.requireAuth) {
                 this.authorized = false;

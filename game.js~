@@ -1,772 +1,736 @@
 /*
-ソースを見てくれてありがとうございますっ
-とはいっても、あんまり特殊なこともやってないし、綺麗なコードでもないですけど・・・
-こんなのでも参考になるなら参考にしてってください。
-せっかくここを見てくれたので、ポイントの入り方について教えます。
-緑（最初っから書いてある文字）を塗りつぶすと、1ピクセル300ポイント
-何も書いていないとこを塗りつぶすと、1ピクセル15ポイント。
-相手の色を塗りつぶすと、1ピクセル8ポイント。
-になっております！
-アンチエイリアスの部分は多分点数入らないです。
-これが陣取りゲームのすべてでした。
-
-Thank you for looking this source code.
-But sorry, this code is not beautiful.
-However, I'm glad if this code helps you.
-I'll tell you that how to get point.
-green(character) → my color is 300 point per 1pixel.
-Not written → my color is 15 point per 1pixel.
-An opponent color → my color is 8 point per 1pixel.
-That's all!
-You don't get point anti-aliasing place.
-Thank you for playing game!! and reading this!!
-
-Good bye!
-
-斉藤洸紀(@dangiruba)
+   MITらいせんす（略)
 */
 
-//enchant.nineleap.memory.LocalStorage.GAME_ID = 1283;
-//enchant.nineleap.memory.LocalStorage.DEBUG_MODE = true;
-
-var ctx;
 enchant();
 
-var Socket = function(msg){
-  //msg.twitterID,msg.screen_name
-  var addr = "http://182.163.60.121:8124";
-  var userData = {twitterID:msg.twitterID,
-                  screen_name:msg.screen_name};
-  this.socket = io.connect(addr);
-  this.socket.emit("join",userData);
+//enchant.nineleap.memory.LocalStorage.DEBUG_MODE = true;
 
-  this.socket.on("rate",function(msg){
-    canvas.addRate(msg.rank);
-  });
+var game;
+var bg;
+var marimo;
+var _data;
 
-  var that = this;
-  this.socket.on("ready",function(msg){
-    //2人揃った時に実行される
-    canvas.newChallenger();
-    canvas.addEnemyData({screen_name:msg.other[0].screen_name,
-                         rank:msg.other[0].rank});
-    that.server = io.connect(addr+"/"+msg.serverName);
-    that.server.emit("entry",{entry:"entry"});
-    that.server.on("line",function(msg){
-      canvas.enemyLine(msg.prev,msg.next);
-    });
-    that.server.on("score",function(msg){
-      //スコアを計算。
-      var myScore = Math.floor((canvas.myScore + msg.enemyScore)/2);
-      var enemyScore = Math.floor((canvas.enemyScore + msg.myScore)/2);
-      canvas.myScore = myScore;
-      canvas.enemyScore = enemyScore;
-      canvas.scoreReceived = true;
-      //trueにすることで、endの32フレーム以降に行くことができる。JUMP!
-    });
-    that.server.on("time",function(msg){
-      if(msg.time == 23){
-        game.popScene();
-        canvas.gameStart();
-      }
-      if(msg.time == 28){
-        canvas.isPear = true;
-      }
-      canvas.syncSecond(msg.time);
-    });
-    that.server.on("end",function(msg){
-      canvas.syncSecond(0);
-    });
-  });
+
+var EXPRESSIONS = function(){
+  this.NORMAL_EYE = 1;
+  this.NORMAL_MOUSE = 2;
+  this.SAD_EYE = 3;
+  this.ABSENCE_MOUSE = 4;
+
+  this.eye = this.NORMAL_EYE;
+  this.mouse = this.NORMAL_MOUSE;
+
+  this.style = "RGB(0,70,30)";
 }
-Socket.prototype.emit = function(type,msg){
-  if(this.server == undefined){
-    return;
+EXPRESSIONS.prototype.set_eye = function(eye){
+  this.eye = eye;
+}
+EXPRESSIONS.prototype.set_mouse = function(mouse){
+  this.mouse = mouse;
+}
+EXPRESSIONS.prototype.draw = function(ctx,r){
+  switch(this.eye){
+    case this.NORMAL_EYE:
+      this._render_normal_eye(ctx,r);
+      break;
+    case this.SAD_EYE:
+      this._render_sad_eye(ctx,r);
+      break;
   }
-  this.server.emit(type,msg);
+  switch(this.mouse){
+    case this.NORMAL_MOUSE:
+      this._render_normal_mouse(ctx,r);
+      break;
+    case this.ABSENCE_MOUSE:
+      this._render_absence_mouse(ctx,r);
+      break;
+  }
 }
-Socket.prototype.exit = function(){
-  this.socket.emit("exit",{});
+EXPRESSIONS.prototype._render_normal_eye = function(ctx,r){
+  //普通の目を表示
+  ctx.fillStyle = this.style;
+  ctx.beginPath();
+  ctx.arc(r-r/2,r+r/4,r/15,0,2*Math.PI,true);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(r+r/2,r+r/4,r/15,0,2*Math.PI,true);
+  ctx.fill();
+}
+EXPRESSIONS.prototype._render_sad_eye = function(ctx,r){
+  //><の目
+  ctx.strokeStyle = this.style;
+  ctx.beginPath();
+  ctx.moveTo(r-r/1.7,r+r/3.2);
+  ctx.lineTo(r-r/2.3,r+r/4.2);
+  ctx.lineTo(r-r/1.65,r+r/5.2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(r+r/1.7,r+r/3.2);
+  ctx.lineTo(r+r/2.3,r+r/4.2);
+  ctx.lineTo(r+r/1.65,r+r/5.2);
+  ctx.stroke();
+}
+EXPRESSIONS.prototype._render_normal_mouse = function(ctx,r){
+  //にこっとした普通の口
+  ctx.strokeStyle = this.style;
+  ctx.beginPath();
+  ctx.moveTo(r-r/2.5,r+r/2.2);
+  ctx.quadraticCurveTo(r,r+r/1.4,r+r/2.5,r+r/2.2);
+  ctx.stroke();
+}
+EXPRESSIONS.prototype._render_absence_mouse = function(ctx,r){
+  ctx.beginPath();
+  ctx.moveTo(r-r/5.5,r+r/2);
+  ctx.lineTo(r+r/5.5,r+r/2);
+  ctx.stroke();
 }
 
-var Canvas = enchant.Class.create(enchant.Sprite,{
-  initialize:function(){
-    enchant.Sprite.call(this,320,320);
-    this.surface = new Surface(320,320);
+var Marimo  = Class.create(Sprite, {
+  initialize:function(r){
+    Sprite.call(this,2*r,2*r);
+    this.surface = new Surface(2*r,2*r);
+    this.ctx = this.surface.context;
+    this.dragging = false;
+    this.r = r;
+    this.prevX = this.prevY = this.offsetX = this.offsetY = 0;
+    this._style.zIndex = 13;
+    this.x = 160-r;
+    this.gx = 0;
+    this.gy = 1;
+    this.prevTouchTime = new Date();
+
+    this.m = r/150;
+
+    this.vx = 0;
+    this.vy = 0;
+
+    this.addEventListener(Event.ENTER_FRAME,this.tick);
+    this.addEventListener(Event.TOUCH_START,this.touch_start);
+    this.addEventListener(Event.TOUCH_MOVE ,this.touch_move);
+    this.addEventListener(Event.TOUCH_END  ,this.touch_end);
+    var that = this;
+    document.getElementById("enchant-stage").addEventListener("mouseout",
+       function(e){
+        if(e.pageX < 0 || 320 < e.pageX ||
+          e.pageY < 0 || 320 < e.pageY){
+          that.touch_end()
+        }
+      }
+    ,true);
+
+    this.draw_marimo(r);
+
+//表情
+    this.expressions = new EXPRESSIONS();
+    this.expressions.set_eye(this.expressions.SAD_EYE);
+    this.expressions.set_mouse(this.expressions.ABSENCE_MOUSE);
+    this.expressions.draw(this.ctx,r);
+       
     this.image = this.surface;
-    this.isConnectNetwork = false;
-    this.endFlag = false;
-    this.scoreReceived = false;
-    this.isPear = false;
 
-//scrarch!!　と書きこむ
-    this.data = "";
-    var ctx = this.surface.context;
-    ctx.font = "52px 'ＭＳ Ｐゴシック'";
-    ctx.fillStyle = "RGB(0,255,0)";
-    var txt = "SCRATCH!!!";
-    var metrics = ctx.measureText(txt);
-    ctx.fillText(txt,160-metrics.width/2,110);
-    txt = "擦れ！！！";
-    metrics = ctx.measureText(txt);
-    ctx.fillText(txt,160-metrics.width/2,210);
-
-//pointの重み設定
-    this.p1 = 8;//相手を上書き
-    this.p2 = 300; //最初から書いてあった文字
-    this.p3 = 15; //何も書いてない場所
-    
-//pointのラベル
-//myPoint
-    this.myPointLabel = new Label("My point:0");
-    this.myPointLabel.point = 0;
-    this.myPointLabel.x = 5;
-    this.myPointLabel.y = 20;
-    this.myPointLabel.color = "RGB(0,0,0)";
-    this.myPointLabel._style.zIndex = 2;
-    this.myPointLabel.update = function(point){
-      if(this.endFlag)
-        return;
-      this.point += point;
-      this.text = "My point:"+this.point;
-    };
-    game.rootScene.addChild(this.myPointLabel);
-//enemyPoint
-    this.enemyPointLabel = new Label("Enemy point:0");
-    this.enemyPointLabel.point = 0;
-    this.enemyPointLabel.x = 5;
-    this.enemyPointLabel.y = 290;
-    this.enemyPointLabel.color = "RGB(0,0,0)";
-    this.enemyPointLabel._style.zIndex = 2;
-    this.enemyPointLabel.update = function(point){
-      if(this.endFlag)
-        return;
-      this.point += point;
-      this.text = "Enemy point:"+this.point;
-    };
-    game.rootScene.addChild(this.enemyPointLabel);
-
-//残り時間のラベル
-    this.restTimeLabel = new Label("20:00");
-    this.restTimeLabel.time = 20.0;
-    this.restTimeLabel.x = 280;
-    this.restTimeLabel.y = 12;
-    this.restTimeLabel.color = "RGB(255,0,0)";
-    this.restTimeLabel._style.zIndex = 2;
-    this.restTimeLabel.sync = function(second){
-      this.time = second;
-    }
-    game.rootScene.addChild(this.restTimeLabel);
-
-    this.restTimeLabelEnterFrame = function(){
-      this.time-= 1/16;
-      var txt = "";
-      if(this.time < 10){
-        txt += "0";
-      }
-      txt += this.time.toFixed(2);
-      this.text = txt;
-      if(this.time < 0){
-        this.text = "00.00";
-        clearInterval(that.timerID);
-/*******************************
- *
-        //ゲーム終了****************
-                                      *
-  ************************************/
- //       game.memory.player.data = {}
-        if(that.login){
-          game.memory.player.data.data = that.data;
-          game.memory.player.data.test = "test";
-          game.memory.update();
-        }
-        this.removeEventListener("enterframe",arguments.callee);
-        that.endFlag = true; 
-        that.end();
-//スコアを送信
-        if(that.isConnectNetwork){
-          socket.emit("score",{myScore:that.myScore,
-                            enemyScore:that.enemyScore});
-        }
-      }
-    }
- 
+    //加速度センサーイベント
     var that = this;
-    this.restTimeLabel.addEventListener("enterframe",this.restTimeLabelEnterFrame );
+    window.addEventListener("devicemotion",function(e){
+      var gv = e.accelerationIncludingGravity;
+
+      that.gx = gv.x/10;
+      that.gy = gv.y/10*-1;
+    },true);
+  },
+  tick:function(){
+    if(this.dragging){
+      return ;
+    }
+
+    this.vy += 0.98*this.m*this.gy;
+    this.vx += 0.98*this.gx;
+
+    this.y += this.vy;
+    this.x += this.vx;
+
+    this.vx *= 0.995;
+    this.vy *= 0.995;
+
+    this._colision();
+  },
+  touch_start:function(e){
+    //ダブルタッチ判断
+    var now = new Date();
+    if( now - this.prevTouchTime <= 300){
+      take_picture();
+      return ;
+    }
+    this.prevTouchTime = new Date();
+
+    if((this.x-e.x+this.r)*(this.x-e.x+this.r) + 
+    (this.y-e.y+this.r)*(this.y-e.y+this.r) <= this.r*this.r){
+      this.dragging = true;
+      this.vx = 0;
+      this.vy = 0;
+      this.offsetX = e.x-this.x;
+      this.offsetY = e.y-this.y;
+      this.prevX = e.x-this.offsetX;
+      this.prevY = e.y-this.offsetY;
+    }
+  },
+  touch_move:function(e){
+    if(this.dragging == false){
+      return;
+    }
+    this.prevX = this.x;
+    this.prevY = this.y;
+
+    this.x = e.x-this.offsetX;
+    this.y = e.y-this.offsetY;
+  },
+  touch_end:function(e){
+    if(this.dragging == false){
+      return;
+    }
+    this.dragging = false;
+    this.vx = this.x - this.prevX;
+    this.vy = this.y - this.prevY;
+  },
+  getImageData:function(){
+    return this.surface.context.getImageData(0,0,this.width,this.height);
+  },
+  _colision:function(){
+    if(this.x <= 0){
+      this.vx *= -1;
+      this.x = 0;
+    }
+    if(320-this.r*2 <= this.x){
+      this.vx *= -1;
+      this.x = 320-this.r*2;
+    }
+    if(this.y <= 0){
+      this.vy *= -1;
+      this.y = 0;
+    }
+    if(320-this.r*2 <= this.y){
+      this.vy *= -1;
+      this.y = 320-this.r*2;
+    }
+  },
+  draw_marimo:function(r){
+    var grad = this.ctx.createRadialGradient(r,r,r-r/10,r,r,r);
+    grad.addColorStop(0,"RGB(93,185,125)");
+    grad.addColorStop(1,"RGBA(130,185,230,0)");
+
+    this.ctx.fillStyle = grad
+
+    this.ctx.arc(r,r,r,0,2*Math.PI,true);
+    this.ctx.fill();
+  },
+  update:function(){
+    this.strokeRect();
+    this.fillText();
+  }
+});
+
+
+var Bubble = Class.create({
+  initialize:function(){
+    this.init();
+  },
+  init:function(){
+    this.r = rand(5)+10; 
+    this.x = this.baseX = rand(380)-30;
+    this.y = 320+this.r;
+    this.explosion = false;
+    this.angle = Math.random() * Math.PI;
+    this.difAngle = Math.random()*0.1;
+    this.sinWidth = rand(6)+8;
+    this.f = 0;
+
+    this.speedY = Math.random()+0.2;
+    this.difY = (0.2+Math.random())/5;
+    this.color = getRGBfromH(rand(360));
     
-    this.myColor = "rgb(255,242,0)";
-    this.enemyColor = "rgb(255,174,201)";
-
-    this.myColorRGB = [255,242,0,255];
-    this.enemyColorRGB = [255,174,201,255];
-
-    this.addEventListener("touchstart",function(e){
-      this.prevX = e.x;
-      this.prevY = e.y;
-      this.penDown = true;
-    });
-    this.addEventListener("touchmove",function(e){
-      if(!this.penDown)
-        return ;
-      var nextX = e.x;
-      var nextY = e.y;   
-
-      var prev = {x:this.prevX,y:this.prevY}; 
-      var next = {x:nextX,y:nextY};
-      this.myLine(prev,next);
-      
-      this.prevX = nextX;
-      this.prevY = nextY;
-    });
-    this.addEventListener("touchend",function(e){
-      this.penDown = false;
-    });
   },
-  myLine:function(prev,next){
-    this.data+=encode(prev.x);
-    this.data+=encode(prev.y);
+  render:function(ctx){
+    this.f++;
+    if(this.y <= 0 - this.r ){
+      this.init();
+    }
+    this.speedY += this.difY;
+    this.y -= this.speedY;
+    this.x = this.baseX + Math.sin(this.angle+this.f*this.difAngle)*this.sinWidth;
 
-//ポイント集計ーlineを書く前
-    var colorSet = [this.enemyColorRGB,[0,255,0,255],[0,0,0,0]];
-    var sx = Math.min(prev.x,next.x)-7;
-    var sy = Math.min(prev.y,next.y)-7;
-    var ax = Math.max(prev.x,next.x)-sx+7;
-    var ay = Math.max(prev.y,next.y)-sy+7;
-    var prevColor = this.getCanvasData(sx,sy,ax,ay,colorSet);
-
-    this.line(prev,next,this.myColor);
-
-//lineを書いた後のポイント集計
-    var nowColor = this.getCanvasData(sx,sy,ax,ay,colorSet);
-    var point = (prevColor[0]-nowColor[0])*this.p1 + 
-                (prevColor[1]-nowColor[1])*this.p2 +
-                (prevColor[2]-nowColor[2])*this.p3;
-    this.myPointLabel.update(point);
-
-//座標を送信
-    if(this.isConnectNetwork && this.isPear)
-      socket.emit("line",{prev:prev,next:next});
-
+    this._put_bubble(ctx);
   },
-  enemyLine:function(prev,next){
-    var colorSet = [this.myColorRGB,[0,255,0,255],[0,0,0,0]];
-    var sx = Math.min(prev.x,next.x)-7;
-    var sy = Math.min(prev.y,next.y)-7;
-    var ax = Math.max(prev.x,next.x)-sx+7;
-    var ay = Math.max(prev.y,next.y)-sy+7;
-    var prevColor = this.getCanvasData(sx,sy,ax,ay,colorSet);
-
-    this.line(prev,next,this.enemyColor);
-
-    var nowColor = this.getCanvasData(sx,sy,ax,ay,colorSet);
-    var point = (prevColor[0]-nowColor[0])*this.p1 + 
-                (prevColor[1]-nowColor[1])*this.p2 +
-                (prevColor[2]-nowColor[2])*this.p3;
-    this.enemyPointLabel.update(point);
-
-  },
-  setEnemyData:function(data,name){
-    this.enemyData = data;
-  },
-  startEnemy:function(){
-    this.dataNum = this.enemyData.length/2;
-    var time = 20.0/this.dataNum * 1000;
-    var i = 0;
-    var that = this;
-    var prevX = decode(this.enemyData[i++]);
-    var prevY = decode(this.enemyData[i++]);
-
-    var timerID = setInterval(function(){
-      var x = decode(that.enemyData[i++]);
-      var y = decode(that.enemyData[i++]);
-      that.enemyLine({x:prevX,y:prevY},
-                {x:x,y:y});
-      prevX = x;
-      prevY = y;
-
-    },time);
-    this.timerID = timerID;
-
-  },
-  line:function(prev,next,color){
-    var ctx = this.surface.context;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.lineWidth = "13";
-    ctx.strokeStyle = color;
+  _put_bubble:function(ctx){
     ctx.beginPath();
-    ctx.moveTo(prev.x,prev.y);
-    ctx.lineTo(next.x,next.y);
+    
+    var x = this.x+this.r;
+    var y = this.y+this.r;
+    
+
+    var grad = ctx.createRadialGradient(x,y,0,x,y,this.r);
+    grad.addColorStop(0,"RGBA(250,250,250,0.05)");
+    grad.addColorStop(0.8,"RGBA(200,200,230,0.05)");
+    grad.addColorStop(1,"RGBA("+this.color.r+","+this.color.g+","+this.color.b+",0.2)");
+    
+    ctx.fillStyle = grad;
+//    ctx.fillStyle = "RGBA(250,250,250,0.3)";
+    ctx.arc(x,y,this.r,0,Math.PI*2,true);
+    ctx.fill();
+  }
+  
+});
+
+function getRGBfromH(h){
+  var r,g,b;
+  
+  if(h < 0){
+    h *= -1;
+  }
+  h = h % 360;
+  var i = Math.floor(h / 60) % 6,
+      f = (h / 60) - i,
+      q = 255 * (1 - f),
+      t = 255 * (1 - (1 - f));
+      
+  switch (i) {
+    case 0 :
+      r = 255;  g = t;  b = 0;  
+      break;
+    case 1 :
+      r = q;  g = 255;  b = 0; 
+      break;
+    case 2 :
+      r = 0;  g = 255;  b = t;  
+      break;
+    case 3 :
+      r = 0;  g = q;  b = 255;  
+      break;
+    case 4 :
+      r = t;  g = 0;  b = 255;  
+      break;
+    case 5 :
+      r = 255;  g = 0;  b = q;
+      break;
+  }
+  return {'r': Math.round(r),
+          'g': Math.round(g),
+          'b': Math.round(b)};
+}
+  
+
+var Star = Class.create({
+  initialize:function(r){
+    this.x = 0;
+    this.y = 0;
+    this.r = r;
+  },
+  render:function(ctx){
+    //this.x--;
+    this.x -= (320-this.y)/100;
+    320-this.y
+    if(this.x <= 0 - this.r*2){
+      this.x = 320;
+    }
+
+    ctx.beginPath();
+    ctx.fillStyle = "RGB(215,215,215)";
+    ctx.arc(this.x+this.r,this.y+this.r,this.r,0,Math.PI*2,true);
+    ctx.fill();
+  }
+});
+
+var ShootingStar = Class.create({
+  initialize:function(firstX,firstY,endX,endY,frame,r){
+    /* (firstX,firstY)から(endX,endY)にframeフレームかけて移動する
+       流れ星。
+    */
+    this.first = {x:firstX,y:firstY};
+    this.end = {x:endX, y:endY};
+    this.frame = frame;
+    this.r = r;
+
+  },
+  render:function(ctx){
+    //流れ星を次のフレームにすすめる。
+    //戻り値：残りフレーム数、０になったら終了
+    if(this.frame <= 0)
+      return 0;
+
+    ctx.beginPath();
+    var dx = (this.end.x - this.first.x)/this.frame;
+    var dy = (this.end.y - this.first.y)/this.frame;
+
+    ctx.fillStyle = "RGB(180,180,120)";
+    ctx.arc(this.first.x + dx,
+            this.first.y + dy,
+            this.r,
+            0,Math.PI*2,true);
+    ctx.fill();
+
+    //軌跡
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = this.r;
+    ctx.beginPath();
+    ctx.moveTo(this.first.x + (this.end.x-this.first.x)/(this.frame+3),
+               this.first.y + (this.end.y-this.first.y)/(this.frame+3));
+    ctx.lineTo(this.first.x + dx,
+               this.first.y + dy);
     ctx.stroke();
-    
+
+
+
+    this.frame--;
+
+    return this.frame;
+
+  }
+});
+
+var Background  = Class.create(Sprite, {
+  initialize:function(w,h,n){
+    Sprite.call(this,320,320);
+    this.surface = new Surface(320,320);
+
+    this.NOON = "noon";
+    this.NIGHT = "night";
+
+    if(n == undefined){
+      n = 0;
+    }
+    this.n = n;
+
+    this.blue = 250 - 10*this.n
+//今の時間を調べて、１９時〜６時まで夜モード
+//　　　　　　　　　　６時〜１９時まで昼モード
+    var hour = getDate().hour;
+    if(hour <= 6 || 19 <= hour){
+      this.night();
+    }
+    else{
+      this.noon();
+    }
+
+    this.image = this.surface;
+    this.addEventListener(Event.ENTER_FRAME,this.tick);
   },
-  getCanvasData:function(x,y,ax,ay,colorSet){
+  noon:function(){
+    this.type = this.NOON;
+    
+    this._noon();
+    var bubble_count = 40;
+    this.bubbles = [];
+    for(var i = 0; i < bubble_count;i++){
+      this.bubbles.push(new Bubble());
+    }
+  },
+  _noon:function(){
     var ctx = this.surface.context;
-    var imagedata = ctx.getImageData(x,y,ax,ay);
-    var data = imagedata.data;
-    var colors = colorSet;
-    var counts = [];
-    for(var i = 0; i < colorSet.length; i++){
-      counts[i] = 0;
-    }
-// 改良前   
-    for(var i = 0; i < data.length/4; i++){
-      for(var k = 0; k < colors.length; k++){
-        var j;
-        for(j = 0; j < 4; j++){
-          if(data[i*4+j] != colors[k][j]){
-            break;
-          }
-        }
-        if(j == 4){
-          counts[k]++;          
-        }
-      }
-    }
 
-/*//改良後 ~作成中。むずかしい
-    var x2 = x+ax;
-    var y2 = y+ay;
-    var a = 1.0*(-1*y2 - -1*y) / (x2 - x);
-    if(a == 0){
-      var b = 0;
-    }
-    else if(x == 0){
-      x++;
-    }
-    else{
-      var b = y/(a*x);
-    }
+    var grad = ctx.createLinearGradient(0,0,0,320);
+    grad.addColorStop(0,"RGB(44,143,"+this.blue+")");
+    grad.addColorStop(1,"RGB(96,193,"+(this.blue-30)+")");
     
-
-    var distance = 
-
-    for(var i = 0; i < imagedata.width;i++){
-      var firstY = a * i + b - 7;
-      var endY = a * i + b + 7;
-    }
-    */ 
-    return counts;
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,320,320);  
   },
-  addMyData:function(data){
-    //自分用のラベル
-    this.myName = data.screen_name;
-    if(this.myLabel == undefined){
-      this.myLabel = new Label("~MyData~ name:"+data.screen_name + 
-                             ",rate:"+data.rank);
-      this.myLabel.addEventListener("enterframe",function(){
-        this.x -= 2;
-        if(this.x <= -320){
-          this.x = 320;
-        }
-      });
-      game.rootScene.addChild(this.myLabel);
+  _draw_bubbles:function(){
+    for(var i = 0; i < this.bubbles.length; i++){
+      this.bubbles[i].render(this.surface.context);
     }
-    else{
-      this.myLabel.text = "~MyData~ name:"+data.screen_name + 
-                          ",rate:"+data.rank;
+  },
+  night:function(){
+    this.type = this.NIGHT;
+
+    this._night();
+
+    this.stars = [];
+    this.shooting_stars = [];
+    for(var i = 0; i < 30; i++){
+      for(var j = 0; j < 25; j++){
+        var star = new Star(rand(2));
+        star.x = rand(320);
+        star.y = rand(300-i*8);
+
+        this.stars.push(star)
+      }
     }
-    this.myLabel.y = 0;
-    this.myLabel.x = 30;
-    this.myLabel.font = "12px monospace";
-    this.myLabel.color = "RGB(0,0,255)";
+    this._draw_stars();
   },
-  addEnemyData:function(data){
-    //相手用のラベル
-    this.enemyName = data.screen_name;
-    if(this.enemyLabel == undefined){
-      this.enemyLabel = new Label("~enemyData~ name:"+data.screen_name + 
-                             ",rate:"+data.rank);
-      this.enemyLabel.addEventListener("enterframe",function(){
-        this.x -= 2;
-        if(this.x <= -320){
-          this.x = 320;
-        }
-      });
-      game.rootScene.addChild(this.enemyLabel);
+  render:function(){
+    switch(this.type){
+      case this.NIGHT:
+        this._night();
+        this._draw_stars();
+        this._shooting_stars();
+        break;
+      case this.NOON:
+        this._noon();
+        this._draw_bubbles();
+        break;
     }
-    else{
-      this.enemyLabel.text = "~enemyData~ name:"+data.screen_name+
-                             ",rate:"+data.rank;
-    }
-    this.enemyLabel.y = 305;
-    this.enemyLabel.x = 30;
-    this.enemyLabel.font = "12px monospace";
-    this.enemyLabel.color = "RGB(0,0,255)";
   },
-  gameStart:function(){
-    var scene = new Scene();
-    game.pushScene(scene);
-    var count = new Sprite(320,320);
-    var overlay = new Sprite(320,320);
-
-    var surface = new Surface(320,320);
-    overlay.image = surface;
-
-    scene.addChild(count);
-    scene.addChild(overlay);
-
-    var ctx = surface.context;
-    ctx.fillStyle = "RGB(0,0,0)";
-    var r;
-    var theta = Math.PI*2/12;
-    var that = this;
-    count.addEventListener("enterframe",function(){
-      if(this.frame == 0){
-        that.countdownFlag = true;       
-        r = -3;
-        this.image = game.assets["three.png"];
-      }
-      else if(this.frame == 4){
-        that.startPicture = false;
-      }
-      else if(this.frame == 16){
-        r = -3;
-        ctx.clearRect(0,0,320,320);
-        this.image = game.assets["two.png"];
-      }
-      else if(this.frame == 32){
-        r = -3;
-        ctx.clearRect(0,0,320,320);
-        this.image = game.assets["one.png"];
-      }
-      else if(this.frame == 48){
-        game.popScene();
-        that.countdownFlag = false;
-        this.removeEventListener("enterframe",arguments.callee);
-        if(that.isConnectNetwork == false){
-          that.startEnemy();
-        }
-      }
-
-      if(that.countdownFlag == false){
-        game.popScene();
-        this.removeEventListener("enterframe",arguments.callee);
-        this.frame = 0;
-      }
-
-      if(4 <= this.frame && this.frame < 16){
-        ctx.beginPath();
-        ctx.moveTo(160,160);
-        ctx.arc(160,160,227,theta*r,theta*(r+1),false)
-        ctx.closePath();
-        ctx.fill();
-        r++;
-      }
-      else if(20 <= this.frame && this.frame < 32){
-        ctx.beginPath();
-        ctx.moveTo(160,160);
-        ctx.arc(160,160,227,theta*r,theta*(r+1),false);
-        ctx.closePath();
-        ctx.fill();
-        r++;
-      }
-      else if(36 <= this.frame && this.frame < 48){
-        ctx.beginPath();
-        ctx.moveTo(160,160);
-        ctx.arc(160,160,227,theta*r,theta*(r+1),false)
-        ctx.closePath();
-        ctx.fill();
-        r++;
-      }
-
-      this.frame++;
-    });
+  getImageData:function(){
+    return this.surface.context.getImageData(0,0,this.width,this.height);
   },
-  end:function(){
-    var scene = new Scene();
-    var surface = new Surface(320,320);
-    var sprite = new Sprite(320,320);
-    sprite.image = surface;
-    sprite.a = 0.05;
-
-    this.myScore = this.myPointLabel.point;
-    this.dMyScore = Math.floor(this.myScore / 36);
-    this.enemyScore = this.enemyPointLabel.point;
-    this.dEnemyScore = Math.floor(this.enemyScore / 36);
-
-    sprite.timeOutCount = 0;
-    var that = this;
-    sprite.addEventListener("enterframe",function(){
-      if(this.frame <= 20){
-        var ctx = this.image.context;
-        ctx.fillStyle = "RGBA(255,255,255,"+this.a+")";
-        ctx.clearRect(0,0,320,320);
-        ctx.fillRect(0,0,320,320);
-        sprite.a += 0.05;
-      }
-      else if(this.frame <= 31){
-        //ネットワークにつながってる場合、スコアが届くのを待つ
-        if(that.isConnectNetwork){
-          this.timeOutCount++;
-          if(this.timeOutCount >= 16*5){
-            //Timeout
-            alert("Sorry, Timeout...");
-            this.timeOutCount = -100;
-          }
-          else if(that.scoreReceived == false){
-            return ;
-          }
-        }
-      }
-      else if(this.frame <= 32){
-        this.myName = new Label(that.myName);
-        this.myName.width = 160;
-        this.myName.y = 70;
-        this.myName.x = 0;
-        this.myName._style.textAlign = "center";
-        this.enemyName = new Label(that.enemyName);
-        this.enemyName.width = 160;
-        this.enemyName.y = 70;
-        this.enemyName.x = 160;
-        this.enemyName._style.textAlign = "center";
-
-        this.myScore = new Label("00000000");
-        this.myScore.width = 160;
-        this.myScore.y = 180;
-        this.myScore.x = 0;
-        this.myScore.score = 0;
-        this.myScore._style.textAlign = "center";
-        this.myScore._style.fontWeight = "bold";
-        this.myScore._style.fontSize = "26px";
-        this.myScore.update = function(d){
-          this.score += d;
-          var l = (this.score+"").length;
-          this.text = new Array(8-l).join("0");
-          this.text += this.score;
-        }
-        this.enemyScore = new Label("00000000");
-        this.enemyScore.width = 160;
-        this.enemyScore.y = 180;
-        this.enemyScore.x = 160;
-        this.enemyScore.score = 0;
-        this.enemyScore._style.textAlign = "center";
-        this.enemyScore._style.fontWeight = "bold";
-        this.enemyScore._style.fontSize = "26px";
-        this.enemyScore.update = function(d){
-          this.score += d;
-          var l = (this.score+"").length;
-          this.text = new Array(8-l).join("0");
-          this.text += this.score;
-        }
-
-        scene.addChild(this.myName);
-        scene.addChild(this.enemyName);
-        scene.addChild(this.myScore);
-        scene.addChild(this.enemyScore);
-      }
-      else if(/*32<*/ this.frame <= 64){
-        this.myScore.update(that.dMyScore);
-        this.enemyScore.update(that.dEnemyScore);
-      }
-      else if(this.frame <= 65){
-        this.myScore.text = that.myScore;
-        this.enemyScore.text = that.enemyScore;
-      }
-      else if(this.frame <= 66){
-        var win = new Sprite(160,100);
-        var lose = new Sprite(160,100);
-        win.image = game.assets["win.png"];
-        lose.image = game.assets["lose.png"];
-        win.y = lose.y = 90;
-        if(that.myScore >= that.enemyScore){
-          win.x = 0; 
-          lose.x = 160;
-        }
-        else{
-          win.x = 160;
-          lose.x = 0;
-        }
-        scene.addChild(win);
-        scene.addChild(lose);
-      }
-      else if(this.frame <= 82){
-      }
-      else if(this.frame <= 83){
-        if(that.myScore >= that.enemyScore){
-          var message = "@"+this.enemyName.text+
-                  "さんに勝利！！ WIN!! score:"+that.myScore;
-        }
-        else{
-          var message = "@"+this.enemyName.text+
-                  "さんに敗北(´・ω・`)  LOSE... score:"+that.myScore;
-        }
-        game.end(that.myScore,message)
-      }
-      this.frame++;
-    });
-    scene.addChild(sprite);
-    game.pushScene(scene);
+  tick:function(){
+    this.render();
   },
-  _init:function(){
+  _night:function(){
     var ctx = this.surface.context;
-    ctx.clearRect(0,0,320,320);
-    ctx.font = "52px 'ＭＳ Ｐゴシック'";
-    ctx.fillStyle = "RGB(0,255,0)";
-    var txt = "SCRATCH!!!";
-    var metrics = ctx.measureText(txt);
-    ctx.fillText(txt,160-metrics.width/2,110);
-    txt = "擦れ！！！";
-    metrics = ctx.measureText(txt);
-    ctx.fillText(txt,160-metrics.width/2,210);
-
-//point label
-//my
-    this.myPointLabel.point = 0;
-    this.myPointLabel.update(0);
-//enemy
-    this.enemyPointLabel.point = 0;
-    this.enemyPointLabel.update(0);
-
-//残り時間
-//    this.restTimeLabel.removeEventListener("enterframe",this.restTimeLabelEnterFrame);
-    this.restTimeLabel.time = 20.0;
-    this.restTimeLabel.text = "20.00";
-//    this.restTimeLabel.addEventListener("enterframe",this.restTimeLabelEnterFrame );   
-    this.endFlag = false;
-    this.data = "";
-//動いてるenemyを止める
-    clearInterval(this.timerID);
-  },
-  newChallenger:function(user){
-    this.isConnectNetwork = true;
-    this._init();
-
-    if(this.startPicture){
-      game.popScene();
-    }
-
-    this.countdownFlag == false;
-
-    var overlay = new Scene();
-    var sprite = new Sprite(320,320);
-    sprite.image = game.assets["start2.png"];
-    overlay.addChild(sprite);
-    game.pushScene(overlay);
     
-//connecting...
-    var connect = new Label("接続中...<br />connecting...");
-    connect.x = 30;
-    connect.y = 240;
-    connect._style.textAlign = "center";
-    connect.font = '24px "ＭＳ ゴシック"';
-    connect.color  = "#fff";
-    var move = function(){
-      this.x += -3;
-      if(this.x <= -260){
-        this.x = 300;
+    var grad = ctx.createLinearGradient(0,0,320,320);
+    grad.addColorStop(0,"RGB(0,0,30)");
+    grad.addColorStop(1,"RGB(40,80,170)");
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0,0,320,320);
+  },
+  _draw_stars:function(){   
+    for(var i = 0; i < this.stars.length; i++){
+      this.stars[i].render(this.surface.context);
+    }
+  },
+  _shooting_stars:function(){
+    if(rand(100) == 2){
+      var firstY = rand(200);
+      var endY = 320-rand(320-firstY);
+      var firstX = rand(320);
+      var endX = rand(320)
+      var s_star = new ShootingStar(
+          firstX,
+          firstY,
+          endX,
+          endY,
+          16,2
+        );
+      this.shooting_stars.push(s_star);
+    }
+    for(var i = 0; i < this.shooting_stars.length;i++){
+      var i = this.shooting_stars[i].render(this.surface.context);
+      if(i == 0){
+        this.shooting_stars.shift(i);
       }
-    };
-    connect.addEventListener("enterframe",move);
-    overlay.addChild(connect);
-//New challenger!!!
-    var challenger = new Label("New challenger!!!<br />挑戦者が現れました。");
-    challenger.width = 320;
-    challenger._style.textAlign = "center";
-    challenger.y = 100;
-    challenger.x = 0;
-    challenger.font = '24px "ＭＳ ゴシック"';
-    challenger.color  = "#fff";
-    overlay.addChild(challenger);
+    }
+  }
+});
+
+var Button  = Class.create(Sprite, {
+  initialize:function(){
+    Sprite.call(this,60,30);
+    this.x = 255;
+    this.y = 5;
+    this._style_zIndex = 12;
+    this.surface = new Surface(60,30);
+    var ctx = this.surface.context;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0,0,60,30);
+    ctx.fillStyle = "#000";
+    ctx.font = "18px 'ヒラギノ角ゴ Pro W3','Hiragino Kaku Gothic Pro','メイリオ',Meiryo,'ＭＳ Ｐゴシック'";  
+    var x = ctx.measureText("水換え").width;
+    ctx.fillText("水換え",(60-x)/2,23);
+
+    this.image = this.surface;
+
+    this.addEventListener(Event.TOUCH_START,this.click);
+
   },
-  syncSecond:function(second){
-    this.restTimeLabel.sync(second);
-  },
-  addRate:function(rate){
-    this.myLabel.text = "~MyData~ name:"+this.myName
-                            + ",rate:" + rate ;
+  click:function(){
+    game.memory.player.data.changed_water_count++;
+    game.memory.player.data.changed_water = getDate();
+    game.memory.update();
+
+    /*フェードアウトする*/
+    var fade = new Sprite(320,320);
+    var surface = new Surface(320,320);
+    fade.image = surface;
+    fade.ctx = surface.context;
+    fade.a = 0.05;
+    fade.dif = 0.05;
+    fade.ctx.fillStyle = "RGBA(255,255,255,"+fade.a+")";
+    fade.ctx.fillRect(0,0,320,320);
+    fade.addEventListener(Event.ENTER_FRAME,function(){
+      
+      this.a += this.dif;
+      this.ctx.fillStyle = "RGBA(255,255,255,"+this.a+")";
+      this.ctx.clearRect(0,0,320,320);
+      this.ctx.fillRect(0,0,320,320);
+      if(this.a >= 1.3){
+        this.dif = -0.1;
+        bg.blue = 250;
+        bg.render()        
+      }
+      if(this.a <= -0.1){
+        this.removeEventListener(Event.ENTER_FRAME,arguments.callee);
+        game.rootScene.removeChild(this);
+      }
+    });
+    game.rootScene.addChild(fade);
+    
+  }
+});
+
+function rand(n){
+  return Math.floor(Math.random()*n)+1;
+}
+
+/*必要なデータ
+名前、作った日、前回の水換え時間。
+name = "namae"
+created = date
+changed_wator = date
+*/
+
+function getDate(){
+  var a = new Date();
+  return {
+    day:a.getDate(),
+    month:a.getMonth()+1,
+    year:a.getFullYear(),
+    hour:a.getHours(),
+    minute:a.getMinutes(),
+    second:a.getSeconds()
   }
 }
-);
-
-var socket;
-var canvas;
-
-window.unonload = function(){
-  socket.exit();
+function betweenDate(date1,date2){
+  var d1 = new Date(date1.year,date1.month,date1.day);
+  var d2 = new Date(date2.year,date2.month,date2.day);
+  return Math.abs((d1 - d2) / 86400000);
 }
+
+function take_picture(){
+  if(confirm("写真を撮りますよ？\n(ゲームも一旦終了します)")){
+    save()
+  }
+}
+
+function save(){
+  var imgData = getPictureUrl(marimo,bg,post_image);
+  function post_image(imgData){
+    var req = new XMLHttpRequest();
+    req.open("POST","http://182.163.60.7/marimo",true);
+    req.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    if(req){
+      req.onreadystatechange = function(){
+        if(req.readyState == 4){
+          //保存後処理
+          var res = JSON.parse(req.responseText);
+          game_end(res.display_url);
+        }
+      };
+    }
+    query = "";
+    for(var q in _data){
+      query += encodeURI(q)+"="+encodeURI(_data[q])+"&"
+    }
+
+    req.send(query + "picture="+imgData);
+  }
+}
+function game_end(url){
+      _data.name = game.memory.player.data.name;
+      _data.day  = betweenDate(game.memory.player.data.created,getDate());
+      _data.id   = game.memory.player.screen_name;
+
+  status_text = _data.name+ "(生後"+_data.day+"日) "+ url;
+  score = 1001;
+  game.end(score,status_text);
+}
+
+function getPictureUrl(marimo,bg,func){
+  var canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 320;
+  var ctx = canvas.getContext("2d");
+
+  ctx.putImageData(bg.getImageData(),bg.x,bg.y);
+
+  var marimo_img = new Image();
+  endFlag = false;
+  marimo_img.src = marimo.surface._element.toDataURL();
+  marimo_img.onload = function(){
+    ctx.drawImage(marimo_img,marimo.x,marimo.y);
+    var imgData = canvas.toDataURL();
+    imgData = imgData.replace("data:image/png;base64,","");
+    func(imgData)
+  }
+}
+
 window.onload = function() {
     game = new Game(320, 320);
-    
     game.fps = 16;
-    game.preload("three.png","two.png","one.png",
-                "win.png","lose.png","start2.png");
+
     game.memory.player.preload();
-    game.memories.recent.preload();
-    game.onload = function() {
-      document.body.removeChild(document.getElementById("loading"));
-      
-      canvas = new Canvas();
-      canvas.startPicture = true;
-      game.rootScene.addChild(canvas);
-      game.rootScene.backgroundColor ="#eee";
-
-      var userData = game.memory.player;
-      var myrank ;
-      if(game.memory.player.data == undefined){
-        canvas.login = false;
-        myrank = 0;
-        userData = {twitterID:"",
-                    screen_name:"You(not login)"};
-      }
-      else{
-        canvas.login = true;
-        if(game.memory.player.data.rank == null){
-          game.memory.player.data.rank = 1500;
-        }
-        myrank = game.memory.player.data.rank;
-        userData = {twitterID:userData.twitterID+"",
-                  screen_name:userData.screen_name};
-      }
-      console.log(userData);
-
-      socket = new Socket(userData); //Socket.io
+    game.twitterRequest('account/verify_credentials');
     
-      var len = game.memories.recent.length;
-      var c = 0,n;
-      while(true){
-        if(c >= 100){
-          n = 0;
-          break
+
+    game.onload = function() {
+      var name;      
+      if(game.memory.player.data.name == null){
+        //名前入力
+        while(true){
+          name = prompt("あなたのまりもの名前を入力してください\n※変更不可、8文字まで、前後の空白無視")
+          name = name.replace(/^[ 　]+/,"").replace(/[ 　]+$/,"");
+          if(name.length > 8){
+            alert("8文字以下で入力してください");
+            continue;
+          }
+          if(!name){
+            continue;
+          }
+          break;
         }
-        n = Math.floor(Math.random() * len);
-        if(game.memories.recent[n].data.data == undefined){
-          continue;
-        }
-        break;
+        game.memory.player.data.name = name;
+        game.memory.player.data.created = getDate();
+        game.memory.player.data.changed_water = getDate();
+        game.memory.player.data.changed_water_count = 0;
+        game.memory.update();
       }
-      var enemyData = game.memories.recent[n].data.data;
-//ghostボーナス。（という名のバグ抑止
-      enemyData+=encode(160);
-      enemyData+=encode(140);
-      enemyData+=encode(180);
-      enemyData+=encode(200);
+      name = game.memory.player.data.name;      
+
+      var nameLabel = new Label(name+"<br />(生後"+
+          betweenDate(game.memory.player.data.created,getDate())
+          +"日)");
+      nameLabel.width = 255;
+      nameLabel._style.zIndex = 12;
+      nameLabel.color = "#fff";
+      nameLabel.font = "bold 2em/1.5em 'ヒラギノ角ゴ Pro W3','Hiragino Kaku Gothic Pro','メイリオ',Meiryo,'ＭＳ Ｐゴシック',fantasy";
+      game.rootScene.addChild(nameLabel);
       
-      canvas.setEnemyData(enemyData);
 
+      bg = new Background(320,320,
+          betweenDate(getDate(),game.memory.player.data.changed_water)
+        );
+      game.rootScene.addChild(bg);
 
-      var enemy_name = game.memories.recent[n].screen_name;
-      var enemy_rank = game.memories.recent[n].data.rank;
+      var size = betweenDate(game.memory.player.data.created,getDate())
+      marimo = new Marimo(20+size/3);
+      game.rootScene.addChild(marimo);
 
-      var my_name = userData.screen_name;
-      var my_rank = myrank;
+      var button = new Button();
+      game.rootScene.addChild(button);
 
-      canvas.addMyData({screen_name:my_name,
-                        rank:my_rank});
-      canvas.addEnemyData({screen_name:enemy_name+"'s ghost",
-                           rank:enemy_rank});
+/* スコア登録　（iframeで裏で登録しておく) */
+      var url1 = "http://9leap.net/games/1895/result?score="
+      var url2 = "&result=";
+      var score = 1000;
+      var text = name+"(生後"+betweenDate(game.memory.player.data.created,getDate())+"日)"
+      var url = url1+encodeURIComponent(score)+
+                url2+encodeURIComponent(text);
+      var el = document.createElement("iframe");
+      el.src = url;
+      el.width=0;
+      el.height=0;
+      el.style.display = "none";
+      document.body.appendChild(el);
 
-      canvas.gameStart();
+      _data = {};
+      _data.name = game.memory.player.data.name;
+      _data.day  = betweenDate(game.memory.player.data.created,getDate());
+//      _data.id   = game.memory.player.screen_name;
+      _data.id = game.twitterAssets["account/verify_credentials"][0].screen_name
 
     };
     game.start();
 };
 
-function encode(num){
-  return String.fromCharCode.apply(null,[num+40]);
-}
-function decode(c){
-  return c.charCodeAt(0)-40;
-}
 
 
